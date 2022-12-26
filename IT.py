@@ -24,8 +24,8 @@ def add_watermark(image_path, watermark_path):
     img = Image.open(image_path) 
     watermark = Image.open(watermark_path)
     
-    length = watermark.size[0] #длина лого
-    width = watermark.size[1] #ширина лого
+    length = watermark.size[0] 
+    width = watermark.size[1] 
     watermark = watermark.resize((int(length / 16), int(width / 9)), Image.ANTIALIAS) #задаем размер логопо размеру
     
     result = add_watermark_imp(img,watermark)
