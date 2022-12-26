@@ -1,45 +1,96 @@
-from PIL import Image #Это надо
-
-filename = "full-hd.jpg"
-with Image.open(filename) as img: #Загрузка фото
-    img.load()
-
-logof = "logotip_media_tsentr.png" # Загрузка Лого Два способа загрузки
-logo = Image.open(logof)
-
-print(type(img)) # Тип изображения
-print(type(logo)) # Тип изображения
-print(isinstance(img, Image.Image)) #Совпадают типы? Понятия не имею зачем это
-
-widht, height=img.size
-
-a=img.size[0]
-b=img.size[1]
-
-s1=a/4
-s2=b/3
-
-size = (s1, s2) #Уменьшение размера лого
-crop_image = logo.resize((int(512),int(256)))
-# crop_image.resize(size)
-
-a1=crop_image.size[0]
-b1=crop_image.size[1]
-
-a=a-a1
-b=b-b1
+from PIL import Image, ImageEnhance
+import telebot
+import os
+import time
 
 
-print(img.size)# Вывод размеров фото
-print(logo.size)
-print(crop_image.size)
+def add_watermark_imp(image, watermark, opacity = 1, wm_interval = 0): # создание водяного знака
+    assert opacity >= 0 and opacity <= 1
+    if opacity < 1: #Проверка режима изображения
+        if watermark.mode != 'RGBA':
+            watermark = watermark.convert('RGBA')
+        else:
+            watermark = watermark.copy()
+        alpha = watermark.split()[3]
+        alpha = ImageEnhance.Brightness(alpha).enhance(opacity)
+        watermark.putalpha(alpha)
+        
+    layer = Image.new('RGBA', image.size, (0,0,0,0)) #координаты  лого
+    layer.paste(watermark, (0, 0))
+    return Image.composite(layer,  image,  layer)
 
 
-print(a,b)
+def add_watermark(image_path, watermark_path):
+    img = Image.open(image_path) 
+    watermark = Image.open(watermark_path)
+    
+    length = watermark.size[0] #длина лого
+    width = watermark.size[1] #ширина лого
+    watermark = watermark.resize((int(length / 16), int(width / 9)), Image.ANTIALIAS) #задаем размер логопо размеру
+    
+    result = add_watermark_imp(img,watermark)
+    new_path = image_path + '_' + '.jpg' #даем новое имя готовому фото
+    result.save(new_path) #сохраняем готовое фото
+    return new_path
 
-img.paste(crop_image, (a, b), crop_image)# Вставвит лого в фото, расположение, второй раз для прозрачности (Не знаю почему так надо)
+
+def clear_content(chat_id): #отчистка 
+    try:
+        for img in images[chat_id]:
+            os.remove(img)
+    except Exception as e:
+        time.sleep(3)
+        clear_content(chat_id)
+    images[chat_id] = []
+
+    
+bot = telebot.TeleBot('5948733666:AAFYFs-OVn0E89KyW2IM0DLKSgfrNIaqdAs')
+images = dict() #глобальный список
 
 
-img.show() # показать готовое фото
-# logo.show()
+@bot.message_handler(commands = ['start'])
+def start(message):
+    bot.reply_to(message, "Приветствую, этот бот создан для добавления водяного знака на фото\n" + "Чтобы начать, напиши /go")
 
+    
+@bot.message_handler(content_types=['text']) #обоработка текста
+def go(message):
+    if message.text == '/go':
+        bot.send_message(message.from_user.id, "Чтобы добавить водяной знак, отправьте два фото.\n" + "1) само изображение\n" + "2) водяной знак")
+        bot.register_next_step_handler(message, handle_docs_photo)
+    else:
+        bot.send_message(message.from_user.id, 'Напиши /go')
+
+        
+@bot.message_handler(content_types=['photo']) #обоработка фота
+def handle_docs_photo(message):
+    print(message.photo[:-2])
+    
+    images[str(message.chat.id)] = [] #заполнение словаря
+    try:
+        file_info = bot.get_file(message.photo[len(message.photo)-1].file_id) #id последней картинки
+        
+        downloaded_file = bot.download_file(file_info.file_path) 
+        source = 'tmp/' + file_info.file_path 
+
+        with open(source, 'wb') as new_file:
+           new_file.write(downloaded_file)
+           
+        bot.reply_to(message,"Фото добавлено") #ответ на фотографии пользователю
+        images[str(message.chat.id)].append(source)
+    except Exception as error: 
+        bot.reply_to(message, error ) #сообщение об ошибки
+
+    time.sleep(3) #ждем 3 сек, ждем второе фото
+    print('img: ', images)
+    reply_img = ''  
+    
+    if (len(images[str(message.chat.id)]) == 2): #если бот увидел две фотографии
+        
+        reply_img = add_watermark(images[str(message.chat.id)][1], images[str(message.chat.id)][0]) #добавляем водяной знак
+        
+        images[str(message.chat.id)].append(reply_img) #отправка пользователю
+        bot.send_photo(message.chat.id, open(reply_img, 'rb'))
+        clear_content(str(message.chat.id))
+        
+bot.polling(none_stop=True, interval=0)   
